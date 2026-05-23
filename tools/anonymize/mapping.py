@@ -74,6 +74,27 @@ class Mapping:
             encoding="utf-8",
         )
 
+    def load_seed(self, seed_path: Path) -> int:
+        """
+        Загружает seed-словарь: {"оригинал": "псевдоним"} или
+        {"оригинал": {"pseudonym": "...", "kind": "ORG"}}.
+        Возвращает количество добавленных записей.
+        """
+        data = json.loads(seed_path.read_text(encoding="utf-8"))
+        added = 0
+        for original, value in data.items():
+            if original in self.entries:
+                continue
+            if isinstance(value, str):
+                pseudonym, kind = value, "ORG"
+            else:
+                pseudonym = value["pseudonym"]
+                kind = value.get("kind", "ORG")
+            self.entries[original] = {"pseudonym": pseudonym, "kind": kind}
+            added += 1
+        self._sorted_keys = None
+        return added
+
     def apply(self, text: str) -> str:
         """
         Заменяет все известные оригиналы на псевдонимы в тексте.

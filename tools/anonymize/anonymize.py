@@ -82,10 +82,21 @@ def main() -> int:
                     help="Анонимизировать также имена файлов (использует mapping)")
     ap.add_argument("--no-ner", action="store_true",
                     help="Отключить natasha NER (быстрее, но не найдёт ФИО/орг без формы)")
+    ap.add_argument("--seed", type=Path,
+                    help="JSON со словарём заранее известных замен {оригинал: псевдоним}. "
+                         "Идеально для названия таргета M&A и его склонений.")
     args = ap.parse_args()
 
     if not args.input.exists():
         print(f"ERROR: {args.input} не найден", file=sys.stderr)
+        return 2
+
+    if args.rename and not args.out_dir and not args.review:
+        print(
+            "ERROR: --rename без --out-dir перепишет оригиналы (потеряются).\n"
+            "       Укажи --out-dir <папка> чтобы сложить анонимизированные файлы отдельно.",
+            file=sys.stderr,
+        )
         return 2
 
     inputs = collect_inputs(args.input)
@@ -96,6 +107,13 @@ def main() -> int:
     src_root = args.input if args.input.is_dir() else args.input.parent
     mapping_path = args.mapping or (src_root / "mapping.json")
     mapping = Mapping(mapping_path)
+
+    if args.seed:
+        if not args.seed.exists():
+            print(f"ERROR: seed-файл {args.seed} не найден", file=sys.stderr)
+            return 2
+        added = mapping.load_seed(args.seed)
+        print(f"Seed: {args.seed} (+{added} новых записей)")
 
     print(f"Mapping: {mapping_path} ({len(mapping.entries)} существующих записей)")
     print(f"Файлов к обработке: {len(inputs)}")
