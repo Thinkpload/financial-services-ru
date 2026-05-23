@@ -45,3 +45,10 @@ coverage/
 TASKS.md
 MEMORY.md
 .claude/worktrees/
+
+# Чувствительные данные сделок (M&A DD)
+deals/
+test-data/
+**/mapping.json
+**/*.anon.xlsx
+**/*.anon.pdf
