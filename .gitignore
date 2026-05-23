@@ -52,3 +52,4 @@ test-data/
 **/mapping.json
 **/*.anon.xlsx
 **/*.anon.pdf
+.claude/settings.local.json
