@@ -43,6 +43,8 @@ class Mapping:
             data = {"version": 1, "counters": {}, "entries": {}}
         self.counters: dict[str, int] = data.get("counters", {})
         self.entries: dict[str, dict] = data.get("entries", {})
+        self.files: dict[str, str] = data.get("files", {})
+        self._sorted_keys: list[str] | None = None  # кэш для apply()
 
     def pseudonym_for(self, original: str, kind: str) -> str:
         """Возвращает существующий псевдоним или создаёт новый."""
@@ -53,6 +55,7 @@ class Mapping:
         self.counters[prefix] = self.counters.get(prefix, 0) + 1
         pseudonym = f"{prefix}-{self.counters[prefix]:03d}"
         self.entries[original] = {"pseudonym": pseudonym, "kind": kind}
+        self._sorted_keys = None  # инвалидируем кэш
         return pseudonym
 
     def save(self) -> None:
@@ -63,6 +66,7 @@ class Mapping:
                     "version": 1,
                     "counters": self.counters,
                     "entries": self.entries,
+                    "files": self.files,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -77,7 +81,9 @@ class Mapping:
         """
         if not text:
             return text
-        for original in sorted(self.entries, key=len, reverse=True):
+        if self._sorted_keys is None:
+            self._sorted_keys = sorted(self.entries, key=len, reverse=True)
+        for original in self._sorted_keys:
             if original in text:
                 text = text.replace(original, self.entries[original]["pseudonym"])
         return text

@@ -25,33 +25,38 @@ from mapping import Mapping
 
 # --- XLSX ---------------------------------------------------------------------
 
-def process_xlsx(src: Path, dst: Path, mapping: Mapping) -> dict:
+def process_xlsx(src: Path, dst: Path, mapping: Mapping, use_ner: bool = True) -> dict:
     wb = openpyxl.load_workbook(src, data_only=False)
     stats = {"cells_scanned": 0, "cells_changed": 0, "new_entities": 0}
     before = len(mapping.entries)
 
-    # Имена листов тоже анонимизируем
+    # Pass 1: собираем весь текст файла в один буфер (имена листов + строковые ячейки),
+    # детектим сущности РАЗОМ (natasha — тяжёлая, гонять на каждую ячейку нельзя).
+    parts: list[str] = []
+    for sheet in wb.worksheets:
+        parts.append(sheet.title)
+        for row in sheet.iter_rows(values_only=True):
+            for v in row:
+                if isinstance(v, str) and v:
+                    parts.append(v)
+    blob = "\n".join(parts)
+    for original, kind in detect_all(blob, use_ner=use_ner):
+        mapping.pseudonym_for(original, kind)
+
+    # Pass 2: применяем mapping к каждой ячейке (быстрый regex-replace, без NER).
     for sheet in wb.worksheets:
         for row in sheet.iter_rows():
             for cell in row:
                 if cell.value is None or not isinstance(cell.value, str):
                     continue
                 stats["cells_scanned"] += 1
-                text = cell.value
-                # Детектим новые сущности в этой ячейке
-                for original, kind in detect_all(text):
-                    mapping.pseudonym_for(original, kind)
-                # Применяем все известные замены
-                new_text = mapping.apply(text)
-                if new_text != text:
+                new_text = mapping.apply(cell.value)
+                if new_text != cell.value:
                     cell.value = new_text
                     stats["cells_changed"] += 1
-
-    # Имена листов
-    for sheet in wb.worksheets:
         new_title = mapping.apply(sheet.title)
         if new_title != sheet.title:
-            sheet.title = new_title[:31]  # лимит Excel
+            sheet.title = new_title[:31]
 
     # Очистка метаданных
     props = wb.properties
@@ -88,7 +93,7 @@ def _register_cyrillic_font() -> str:
     return "Helvetica"  # последний fallback, кириллица сломается
 
 
-def process_pdf(src: Path, dst: Path, mapping: Mapping) -> dict:
+def process_pdf(src: Path, dst: Path, mapping: Mapping, use_ner: bool = True) -> dict:
     stats = {"pages": 0, "chars_in": 0, "new_entities": 0}
     before = len(mapping.entries)
 
@@ -98,12 +103,11 @@ def process_pdf(src: Path, dst: Path, mapping: Mapping) -> dict:
             text = page.extract_text() or ""
             stats["chars_in"] += len(text)
             stats["pages"] += 1
-            # Детектим новые сущности постранично
-            for original, kind in detect_all(text):
-                mapping.pseudonym_for(original, kind)
             pages_text.append(text)
 
-    # Применяем замены ко всем страницам уже после полного сбора mapping
+    # Детектим сущности РАЗОМ по всему документу (а не постранично — natasha дорогая).
+    for original, kind in detect_all("\n".join(pages_text), use_ner=use_ner):
+        mapping.pseudonym_for(original, kind)
     pages_anon = [mapping.apply(t) for t in pages_text]
 
     # Пересобираем PDF

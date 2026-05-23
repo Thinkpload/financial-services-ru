@@ -10,25 +10,47 @@
 
 ## Установка
 
-```bash
-cd tools/anonymize
-pip install -r requirements.txt
+Используется изолированный venv в `tools/anonymize/.venv/` (gitignored).
+
+```powershell
+# из корня репо, PowerShell
+cd tools\anonymize
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+Активировать venv в текущей сессии (опционально):
+```powershell
+.venv\Scripts\Activate.ps1   # PowerShell
+# или
+.venv\Scripts\activate.bat   # cmd
+```
+
+Без активации — просто вызывай `.venv\Scripts\python.exe` напрямую (как в примерах ниже).
 
 ## Использование
 
-```bash
+```powershell
 # Одиночный файл — mapping создаётся рядом (./mapping.json)
-python anonymize.py report.xlsx
+.venv\Scripts\python.exe anonymize.py report.xlsx
 
 # Пакет от продавца — общий mapping на всю сделку
-python anonymize.py ./deal-target1/ \
-    --mapping ./deal-target1/mapping.json \
-    --out-dir ./deal-target1/anon/
+.venv\Scripts\python.exe anonymize.py ..\..\deals\target1\ `
+    --mapping ..\..\deals\target1\mapping.json `
+    --out-dir ..\..\deals\target1\anon\
 
 # Review: посмотреть что найдено, не записывая файлы
-python anonymize.py report.xlsx --review
+.venv\Scripts\python.exe anonymize.py report.xlsx --review
+
+# С переименованием файлов (анонимизирует и имена)
+.venv\Scripts\python.exe anonymize.py ..\..\test-data\ --rename
 ```
+
+### Флаг `--rename`
+
+Без него: `Отчёт_ООО_Ромашка_2025.xlsx` → `Отчёт_ООО_Ромашка_2025.anon.xlsx` (название утекает).
+С ним: имя файла прогоняется через тот же mapping, получится что-то вроде `Отчёт_ORG-001_2025.xlsx`. Маппинг старое→новое имя сохраняется в `mapping.json` под ключом `files`. Коллизии разрешаются суффиксом `-2`, `-3`.
 
 ## Как это работает
 

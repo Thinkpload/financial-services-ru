@@ -13,9 +13,13 @@ Thumbs.db
 node_modules/
 vendor/
 venv/
+.venv/
 env/
+.env/
 __pycache__/
 *.pyc
+*.pyo
+pip-wheel-metadata/
 
 # Build outputs
 dist/
