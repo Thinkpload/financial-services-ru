@@ -28,8 +28,9 @@ def process_xlsx(src: Path, dst: Path, mapping: Mapping, use_ner: bool = True) -
     stats = {"cells_scanned": 0, "cells_changed": 0, "new_entities": 0}
     before = len(mapping.entries)
 
-    # Pass 1: собираем весь текст файла в один буфер (имена листов + строковые ячейки),
-    # детектим сущности РАЗОМ (natasha — тяжёлая, гонять на каждую ячейку нельзя).
+    # Pass 1: собираем строковые значения и гоняем детекторы чанками.
+    # Большие книги (>1M символов) рвут natasha по памяти если делать одним blob —
+    # её embedding строит матрицу O(n²) и улетает в OOM на 2-4 ГБ.
     parts: list[str] = []
     for sheet in wb.worksheets:
         parts.append(sheet.title)
@@ -37,9 +38,40 @@ def process_xlsx(src: Path, dst: Path, mapping: Mapping, use_ner: bool = True) -
             for v in row:
                 if isinstance(v, str) and v:
                     parts.append(v)
-    blob = "\n".join(parts)
-    for original, kind in detect_all(blob, use_ner=use_ner):
-        mapping.pseudonym_for(original, kind)
+
+    NER_CHUNK = 200_000  # символов — эмпирически безопасно для natasha на 16 ГБ RAM
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+    for p in parts:
+        if buf_len + len(p) > NER_CHUNK and buf:
+            chunks.append("\n".join(buf))
+            buf, buf_len = [], 0
+        buf.append(p)
+        buf_len += len(p) + 1
+    if buf:
+        chunks.append("\n".join(buf))
+
+    # На больших книгах natasha иногда падает с OOM даже после чанковки
+    # (зависит от плотности именованных сущностей в чанке). При любом сбое
+    # детектора переключаемся на regex-only для оставшихся чанков и логируем.
+    ner_active = use_ner
+    for chunk in chunks:
+        try:
+            entities = detect_all(chunk, use_ner=ner_active)
+        except (MemoryError, Exception) as e:
+            if not ner_active:
+                raise
+            print(
+                f"    WARN: natasha NER failed on {src.name} ({type(e).__name__}: {e}), "
+                f"продолжаю без NER (regex-only)",
+                file=sys.stderr,
+            )
+            ner_active = False
+            entities = detect_all(chunk, use_ner=False)
+            stats["ner_fallback"] = True
+        for original, kind in entities:
+            mapping.pseudonym_for(original, kind)
 
     # Pass 2: применяем mapping к каждой ячейке (быстрый regex-replace, без NER).
     for sheet in wb.worksheets:
