@@ -74,6 +74,14 @@ STANDALONE: list[tuple[str, re.Pattern]] = [
     )),
 ]
 
+# ФИО: Фамилия Имя Отчество, где отчество имеет характерное окончание.
+# natasha регулярно пропускает редкие фамилии (напр. "Колодийчук") — этот
+# regex ловит их по окончанию отчества, не зависит от словаря имён.
+FIO_PATTERN = re.compile(
+    r"\b[А-ЯЁ][а-яё\-]+\s+[А-ЯЁ][а-яё\-]+\s+"
+    r"[А-ЯЁ][а-яё\-]+(?:вич|ьич|ович|евич|овна|евна|ична|инична)\b"
+)
+
 # Формы собственности для regex-поиска организаций (fallback без natasha).
 ORG_FORM = re.compile(
     r'(?:ООО|ОАО|ЗАО|ПАО|АО|НКО|ГК|ИП)\s+["«]?([А-ЯЁA-Z][\w\-\s.]{1,60}?)["»]?(?=[\s,.;:)\n]|$)',
@@ -106,9 +114,40 @@ def detect_regex(text: str) -> list[tuple[str, str]]:
         for m in pat.finditer(text):
             found.append((m.group(0), kind))
 
+    for m in FIO_PATTERN.finditer(text):
+        found.append((m.group(0).strip(), "PER"))
+
     for m in ORG_FORM.finditer(text):
-        found.append((m.group(0).strip(), "ORG"))
+        candidate = m.group(0).strip()
+        if _ner_keep(candidate):
+            found.append((candidate, "ORG"))
     return found
+
+
+# Минимальная длина для именованных сущностей. Короче — слишком много FP
+# (на бухотчётности natasha теггит "ДА", "НЕТ", "РФ", "ИП" как ORG/LOC/PER).
+NER_MIN_LEN = 4
+
+# Блоклист коротких частотных слов, которые natasha регулярно тегает как
+# ORG/PER/LOC на финдокументах. Дополнять по результатам прогонов.
+NER_STOPWORDS = {
+    "да", "нет", "рф", "ип", "ао", "ооо", "оао", "зао", "пао", "нко", "гк",
+    "енс", "гк рф", "за год", "итого", "прочее", "оценочные",
+    "отчисления", "накопленная", "поступления", "нематериальные",
+    "нераспределенная", "за 2023 г", "за 2024 г", "за 2025 г",
+}
+
+
+def _ner_keep(text: str) -> bool:
+    """True если NER-сущность стоит сохранять (длинная и не в стоп-листе)."""
+    cleaned = text.strip()
+    if len(cleaned) < NER_MIN_LEN:
+        return False
+    if "\n" in cleaned or "\t" in cleaned:
+        return False
+    if cleaned.lower() in NER_STOPWORDS:
+        return False
+    return True
 
 
 _natasha_cache = None
@@ -154,7 +193,18 @@ def detect_natasha(text: str) -> list[tuple[str, str]]:
     doc.tag_ner(n["ner_tagger"])
     out: list[tuple[str, str]] = []
     for span in doc.spans:
-        if span.type in ("PER", "ORG", "LOC"):
+        if not _ner_keep(span.text):
+            continue
+        if span.type == "ORG":
+            # На финдокументах natasha теггит заголовки балансовых строк
+            # ("Инвестиционная недвижимость", "Таможенного союза") как ORG.
+            # Реальные организации ловит ORG_FORM regex (требует ООО/АО/ИП и т.п.).
+            continue
+        if span.type == "PER" and len(span.text.split()) < 3:
+            # ФИО — это минимум Фамилия Имя Отчество. Иначе отсекаем
+            # обрезки типа 'Нераспределенна', 'Оценочные'.
+            continue
+        if span.type in ("PER", "LOC"):
             out.append((span.text, span.type))
     return out
 
