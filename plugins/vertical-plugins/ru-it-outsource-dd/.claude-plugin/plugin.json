@@ -1,0 +1,8 @@
+{
+  "name": "ru-it-outsource-dd",
+  "version": "0.1.0",
+  "description": "M&A due diligence skills for Russian small IT-outsourcing targets (sysadmin B2B, MSB up to 100M RUB/year). Covers whitening (gray-to-white EBITDA reconstruction), tax risks (54.1 NK, USN splits, IT-accreditation), 152-FZ/KII compliance, multi-entity reconciliation, and RSBU financial audit. See RU_ADAPTATION_PLAN.md for full scope.",
+  "author": {
+    "name": "Thinkpload"
+  }
+}

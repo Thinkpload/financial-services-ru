@@ -40,6 +40,11 @@
       "description": "Operational workflows: KYC document parsing and rules-grid evaluation"
     },
     {
+      "name": "ru-it-outsource-dd",
+      "source": "./plugins/vertical-plugins/ru-it-outsource-dd",
+      "description": "M&A due diligence skills for Russian small IT-outsourcing targets (sysadmin B2B, MSB up to 100M RUB/year): whitening, tax risks, 152-FZ/KII, multi-entity reconciliation, RSBU audit. See RU_ADAPTATION_PLAN.md."
+    },
+    {
       "name": "pitch-agent",
       "source": "./plugins/agent-plugins/pitch-agent",
       "description": "Comps, precedents, LBO to a branded pitch deck, end to end"
