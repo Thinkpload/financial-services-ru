@@ -193,18 +193,23 @@ LLM работает не как «умный читатель документ�
 | 2 | **Valuation basis** | seller_claimed_payback, seller_claimed_profit_basis, detected_ebitda до и после whitening, normalization_needed | — | ❌ **gap → P1.7** |
 | 3 | **Tax optimization normalization** | signs_of_tax_optimization, reported_profit vs normalized_profit_estimate | `ru-whitening-math` (P0), `ru-tax-risk-scan` (P1) | ✅ ядро плана |
 | 4 | **Revenue normalization** | core_service / non_core / hardware / one_off / recurring_revenue_signals | `ru-revenue-by-direction` (P1.5) | ✅ покрыто |
-| 5 | **Client base quality** | concentration_risk, avg_ticket, contract_duration, transferability_risk, change-of-control | концентрация в P1.5 + change-of-control сканер | ⚠️ разбросано, нужен сводный output |
+| 5 | **Client base quality** | concentration_risk, avg_ticket, contract_duration, transferability_risk, change-of-control, **per-client LTV + services breakdown** | `ru-client-base-quality` (P1.8) | ✅ покрыто (новый скилл) |
+| 5a | **Assets inventory** | hardware / software_licenses / IP / brand / key_people с transfer_status (transfers / requires_renegotiation / stays_with_seller) | `ru-asset-inventory` (P2.8) | ✅ покрыто (новый скилл) |
 | 6 | **Cost structure** | cost_of_delivery, payroll, owner_compensation, overhead, margin_structure | `ru-cost-allocation-audit` (P1.5) | ✅ покрыто |
 | 7 | **Owner dependency** | owner_cash_extraction, owner_operational_role, replaceability_estimate, likely_replacement_cost | — | ❌ **gap → P2.7** |
 | 8 | **Business-without-owner scenarios** | сценарии A (stable) / B (replacements needed) / C (economics worsens) / D (model collapses) | — | ❌ **gap → расширение P2.7** |
-| 9 | **Seller feedback draft** | обоснованный ответ продавцу: что увидели, что смущает, какой документ нужен и почему | `ru-md-report-builder` (P6) делает только внутренний отчёт | ❌ **gap → P6.5** |
-| 10 | **Escalation decision** | routing: Tier 1 (LLM-only) / Tier 2 (внутренний аналитик) / Tier 3 (внешний эксперт) | — | ❌ **gap → P7** |
+| 9 | **Seller feedback draft** | обоснованный ответ продавцу — текст письма + lookup по [SELLER_FOLLOWUP_CATALOG.md](SELLER_FOLLOWUP_CATALOG.md) | `ru-seller-feedback-draft` (P6.5) | ✅ покрыто (новый скилл) |
+| 9a | **Seller deliverable pack** | outbound PDF «Executive feedback pack»: business understanding + strengths + concerns (как вопросы) + preliminary valuation range + next steps | `ru-seller-deliverable-pack` (P6.7) | ✅ покрыто (новый скилл) |
+| 10 | **Escalation decision** | routing: Tier 1 (LLM-only) / Tier 2 (внутренний аналитик) / Tier 3 (внешний эксперт) | `ru-escalation-router` (P7) | ✅ покрыто (новый скилл) |
 
 ### Новые скиллы, добавляемые в бэклог из gap-анализа
 
 - **P1.7 — `ru-valuation-basis-extract`** — вытаскивает из документов и комментариев продавца, на чём он строит цену (payback в N лет, мультипликатор EBITDA, мультипликатор выручки), и сопоставляет с детектируемой EBITDA **до и после** whitening. Без этого whitening_gap «висит в воздухе» — непонятно, относительно какой базы продавец продаёт.
+- **P1.8 — `ru-client-base-quality`** — per-client разрез: услуги → абонка → дата начала контракта → расчётный LTV → transferability_per_client. Заполняет `client_base_assessment.customers[]`. Связан с anonymizer mapping (псевдонимы клиентов сшиваются между документами).
 - **P2.7 — `ru-owner-dependency-model`** — оценивает собственника как **две статьи**: сколько забирает (cash extraction) и что делает (operational role). Каталогизирует функции → replaceability_estimate → likely_replacement_cost (1–3 наёмные позиции вместо собственника). Включает 4 сценария «бизнес без основателя» (A/B/C/D). Output дополняет post-deal EBITDA из whitening + поднимает «открытые вопросы для следующего созвона» (что нельзя понять только по документам).
-- **P6.5 — `ru-seller-feedback-draft`** — генерирует **обоснованный** ответ продавцу: что проанализировано, какие выводы уже можно сделать, какие цифры требуют уточнения, какой следующий документ нужен **и почему** (не «пришлите ещё всё», а «без X нельзя подтвердить вывод Y»). Перехватывает анти-паттерн «бесконечно просить документы без содержательной обратной связи».
+- **P2.8 — `ru-asset-inventory`** — разделение всех активов на 3 ведра: **transfers** / **requires_renegotiation** / **stays_with_seller**. Категории: hardware, software_licenses, IP, brand, key_people, client_base_as_asset. Для IT-аутсорса критично — лицензии и оборудование часто оформлены на ИП собственника или физлицо.
+- **P6.5 — `ru-seller-feedback-draft`** — генерирует **обоснованный** ответ продавцу: что проанализировано, какие выводы уже можно сделать, какие цифры требуют уточнения, какой следующий документ нужен **и почему** (не «пришлите ещё всё», а «без X нельзя подтвердить вывод Y»). Запросы выбираются из [SELLER_FOLLOWUP_CATALOG.md](SELLER_FOLLOWUP_CATALOG.md) по `catalog_id`, а не сочиняются ad-hoc — это накапливает практику.
+- **P6.7 — `ru-seller-deliverable-pack`** — outbound PDF для продавца: «Executive feedback pack». Демонстрирует экспертизу: что поняли о бизнесе, сильные стороны, areas_of_concern (переформулированные в вопросы, не обвинения), preliminary_valuation_range (с флагом «раскрывать или нет»), next steps. MD → PDF через pandoc. `internal_only_appendix` остаётся у нас как переговорные карты — не всё, что заметили, сообщаем продавцу.
 - **P7 — `ru-escalation-router`** — routing-логика на выходе пайплайна. Решение Tier 1 / 2 / 3 основано на: confidence_level из reliability check, размере whitening_gap, валидности клиентской базы, стадии сделки.
 
 ### Экономика tiered analysis
@@ -465,10 +470,16 @@ Fork настроен, ветка `ru-work`, анонимайзер работа
 ### Этап 3.5 — `ru-valuation-basis-extract` (2-3 дня, P1.7) ← **gap-fill**
 Опирается на detected EBITDA из Этапа 2 (whitening). Без этого whitening_gap не привязан к базе цены продавца — непонятно, относительно чего торговаться.
 
+### Этап 3.7 — `ru-client-base-quality` (2-3 дня, P1.8) ← **gap-fill**
+Per-client разрез: услуги → абонка → дата начала контракта → расчётный LTV → transferability_per_client. Заполняет массив `client_base_assessment.customers[]`. Связан с anonymizer mapping для сшивки клиентов между документами.
+
 ### Этап 4 — `ru-it-accreditation-check` + `ru-152fz-check` (3-4 дня, P2-P3)
 
 ### Этап 4.5 — `ru-owner-dependency-model` (3-4 дня, P2.7) ← **gap-fill**
 Собственник как деньги + как работа. Каталог функций → replaceability → likely_replacement_cost. Сценарии A/B/C/D «бизнес без основателя». Дополняет post-deal EBITDA из whitening.
+
+### Этап 4.7 — `ru-asset-inventory` (3 дня, P2.8) ← **gap-fill**
+Разделение всех активов (hardware, software_licenses, IP, brand, key_people, client_base_as_asset) на 3 ведра: **transfers** / **requires_renegotiation** / **stays_with_seller**. Для IT-аутсорса критично: лицензии и оборудование часто оформлены на ИП собственника. Без этого post-deal экономика неверна — покупатель не понимает, что физически и юридически переходит.
 
 ### Этап 5 — `ru-spa-risks` (2-3 дня, P4)
 
@@ -478,7 +489,10 @@ Fork настроен, ветка `ru-work`, анонимайзер работа
 Финальная склейка: анонимизатор → детекторы → whitening → riski → отчёт.
 
 ### Этап 7.5 — `ru-seller-feedback-draft` (2-3 дня, P6.5) ← **gap-fill**
-Обоснованный ответ продавцу: что увидели, что смущает, какой следующий документ нужен и почему. Перехватывает «бесконечно просим документы без содержательной обратной связи».
+Обоснованный ответ продавцу: что увидели, что смущает, какой следующий документ нужен и почему. Перехватывает «бесконечно просим документы без содержательной обратной связи». Использует [SELLER_FOLLOWUP_CATALOG.md](SELLER_FOLLOWUP_CATALOG.md) как lookup table — не сочиняет формулировки ad-hoc, выбирает по `catalog_id`.
+
+### Этап 7.6 — `ru-seller-deliverable-pack` (3-4 дня, P6.7) ← **gap-fill**
+Outbound PDF для продавца: «Executive feedback pack». Секции — business_understanding, strengths, areas_of_concern (с reframe в вопросы), preliminary_valuation_range (с флагом «раскрывать продавцу или нет»), next_steps. Демонстрирует экспертизу и серьёзность намерений. MD → PDF через pandoc, стандартизированный шаблон. `internal_only_appendix` остаётся у нас как переговорные карты.
 
 ### Этап 7.7 — `ru-escalation-router` (1-2 дня, P7) ← **gap-fill**
 Routing Tier 1 / Tier 2 / Tier 3 на выходе пайплайна. Решение по confidence_level, whitening_gap, валидности клиентской базы, стадии сделки.
@@ -486,7 +500,7 @@ Routing Tier 1 / Tier 2 / Tier 3 на выходе пайплайна. Реше�
 ### Этап 8 — Pilot на реальной сделке
 Прогон end-to-end на первой настоящей сделке. Фидбек → бэклог фиксов.
 
-**Итого**: ~40-50 рабочих дней до боевого пилота (+5 дней на скиллы из «Уточнений», +8-12 дней на gap-fill скиллы P1.7/P2.7/P6.5/P7).
+**Итого**: ~48-60 рабочих дней до боевого пилота (+5 дней на скиллы из «Уточнений», +16-22 дней на gap-fill скиллы P1.7/P1.8/P2.7/P2.8/P6.5/P6.7/P7).
 
 ## Что нужно от тебя
 

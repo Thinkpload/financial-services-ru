@@ -38,16 +38,16 @@ Narrative — побочный продукт. Schema — первичный.
 | `revenue_profile` | `ru-revenue-by-direction` (P1.5) |
 | `operating_economics` | `ru-cost-allocation-audit` (P1.5) |
 | `tax_normalization` | `ru-whitening-math` (P0) + `ru-tax-risk-scan` (P1) |
-| `client_base_assessment` | derived из P1.5 + dd-checklist outputs (см. ниже про возможный отдельный скилл) |
+| `client_base_assessment` (с `customers[]`) | `ru-client-base-quality` (P1.8) |
+| `assets_inventory` | `ru-asset-inventory` (P2.8) |
 | `owner_dependency` | `ru-owner-dependency-model` (P2.7) |
 | `founder_exit_scenario` | расширение `ru-owner-dependency-model` (P2.7) |
 | `valuation_basis` | `ru-valuation-basis-extract` (P1.7) |
-| `seller_feedback_draft` | `ru-seller-feedback-draft` (P6.5) |
+| `seller_feedback_draft` | `ru-seller-feedback-draft` (P6.5) — использует [SELLER_FOLLOWUP_CATALOG.md](SELLER_FOLLOWUP_CATALOG.md) |
+| `seller_deliverable_pack` | `ru-seller-deliverable-pack` (P6.7) — MD→PDF outbound |
 | `escalation_recommendation` | `ru-escalation-router` (P7) |
 | `open_questions` | агрегатор из всех скиллов, собирается в P6 |
 | `TargetFinancialAssessment` | финальный wrap-up в `ru-md-report-builder` (P6) |
-
-> **Замечание про `client_base_assessment`:** сейчас собирается из побочных outputов P1.5 (концентрация клиентов) + dd-checklist (change-of-control сканер). Если на пилоте окажется, что собрать стабильно не выходит — отделить как `ru-client-base-quality` (новый P1.8).
 
 ## Object specifications
 
@@ -155,9 +155,78 @@ service_mix_known: yes | partial | no
 transferability_risk: low | medium | high        # риск потери клиентов при смене собственника
 change_of_control_clauses_detected: yes | partial | no | unknown
 client_base_validity: weak | medium | strong
+customers:                                       # per-client detail (заполняется при наличии раскладки)
+  - pseudonym: <string, согласован с anonymizer mapping>
+    services:                                    # услуги по этому клиенту
+      - service_type: pto_abonentka | one_off_project | 1c_its | 1c_fresh
+                    | hardware_resale | rent_compute | other
+        monthly_fee_rub: <int | null>
+        description: <free-form, ≤ 200 chars>
+    total_monthly_revenue_rub: <int | null>
+    contract_start_date: <YYYY-MM | null>
+    current_contract_end_date: <YYYY-MM | null>
+    historical_revenue_total_rub: <int | null>   # с даты начала по now
+    calculated_ltv_rub: <int | null>             # если есть данные для расчёта
+    transferability_per_client: low | medium | high | unknown
+    notes: <free-form, ≤ 300 chars>
+ltv_calculation_method: avg_contract_value | historical_actual | discounted_cashflow | null
 evidence_basis: [...]
 confidence: low | medium | high
 ```
+
+> **Связь с анонимайзером:** `customers[].pseudonym` должен соответствовать псевдонимам в `mapping.json` сделки. Это позволяет связывать клиентскую раскладку с упоминаниями клиентов в других документах (договоры, ОСВ).
+
+### 6a. `assets_inventory`
+
+Что физически и юридически переходит в сделку. Критично для IT-аутсорса: оборудование и лицензии часто оформлены на ИП собственника или физлицо.
+
+```yaml
+hardware:
+  - item_type: server | workstation | network | client_premises_equipment | other
+    description: <free-form, ≤ 200 chars>
+    quantity: <int>
+    book_value_rub: <int | null>
+    on_balance_of: target_entity | owner_ip | owner_personal | third_party | unknown
+    physical_location: office | client_site | warehouse | with_employee | unknown
+    transfer_status: transfers | requires_renegotiation | stays_with_seller | unknown
+software_licenses:
+  - license_type: 1c | microsoft | antivirus | itsm | monitoring | specialized | other
+    description: <free-form, ≤ 200 chars>
+    quantity: <int | null>
+    annual_cost_rub: <int | null>
+    registered_to: target_entity | owner_ip | owner_personal | client | unknown
+    transfer_status: transfers | requires_renegotiation | stays_with_seller | unknown
+ip:                                              # intellectual property
+  - asset_type: methodology | runbook | internal_software | knowledge_base
+              | automation_scripts | other
+    description: <free-form, ≤ 300 chars>
+    rights_held_by: target_entity | owner_personal | employee | shared | unclear
+    transfer_status: transfers | requires_renegotiation | stays_with_seller | unknown
+brand:
+  - asset_type: domain | website | social_account | catalog_listing | trademark | other
+    identifier: <string, e.g. domain name>
+    registered_to: target_entity | owner_ip | owner_personal | unknown
+    transfer_status: transfers | requires_renegotiation | stays_with_seller | unknown
+client_base_as_asset:                            # клиентская база как отдельный актив
+  formal_contracts_signed_with: target_entity | mix_target_and_owner_ip | owner_ip | mixed_unclear
+  change_of_control_protection: present_in_majority | present_partial | absent | unknown
+  estimated_transferable_share: <float [0..1] | null>
+key_people:                                      # ключевые сотрудники как удерживаемый актив
+  - role: <string>
+    pseudonym: <string>
+    criticality: low | medium | high
+    retention_risk: low | medium | high | unknown
+    formal_employment: trudovoy | ip | self_employed | informal | unknown
+overall_transferable_asset_value_rub: <int | null>    # грубая оценка того, что реально переходит
+assets_at_risk:                                  # активы под вопросом — самый важный output блока
+  - item: <ссылка на конкретную запись выше>
+    risk: <что именно может не перейти и почему>
+    mitigation_needed: <что нужно сделать в SPA, чтобы перешло>
+evidence_basis: [...]
+confidence: low | medium | high
+```
+
+> **Главный смысл объекта:** не «опись имущества», а **разделение на 3 ведра**: что переходит автоматически, что требует отдельных переговоров (перерегистрация лицензий, переподписание договоров), что остаётся у продавца. Без этого post-deal экономика будет неверной.
 
 ### 7. `owner_dependency`
 
@@ -219,13 +288,62 @@ unresolved_points:
   - point: <string>
     blocks_conclusion: <which conclusion we cannot reach without this>
 requested_followups:
-  - artifact: <string>
+  - catalog_id: <ID из SELLER_FOLLOWUP_CATALOG.md | null если ad-hoc>
+    artifact: <string — если catalog_id указан, берётся title из каталога>
     rationale: <why exactly — какой вывод без него невозможен>
+    blocks_conclusion_ref: <ссылка на preliminary_findings[] или unresolved_points[]>
     not_a_general_request: true                  # маркер «обоснованный, не «пришлите ещё всё»»
 tone: professional | exploratory | negotiating
 ```
 
-> **Антипаттерн, который этот объект ловит:** «спасибо за 3 документа, пришлите ещё 4». Каждый `requested_followups[].rationale` должен указывать на конкретный `preliminary_findings` или `unresolved_points`.
+> **Антипаттерн, который этот объект ловит:** «спасибо за 3 документа, пришлите ещё 4». Каждый `requested_followups[].rationale` должен указывать на конкретный `preliminary_findings` или `unresolved_points` через `blocks_conclusion_ref`.
+>
+> **Catalog lookup:** перед генерацией ad-hoc формулировки LLM ищет в [SELLER_FOLLOWUP_CATALOG.md](SELLER_FOLLOWUP_CATALOG.md) подходящий запрос по `unblocks_skill` / `confirms`. Ad-hoc формулировка допустима только если в каталоге ничего нет. Если ad-hoc формулировка повторяется на 3+ сделках — она кодифицируется как новая запись каталога.
+
+### 10a. `seller_deliverable_pack`
+
+Outbound артефакт для **отправки продавцу**: «Executive feedback pack». Цель — продемонстрировать экспертизу, серьёзность намерений и дать содержательную обратную связь, а не просто запросить новые документы. Финальный формат — PDF (MD → pandoc).
+
+```yaml
+title: <string, e.g. "Предварительная оценка бизнеса TARGET-A">
+prepared_for: <string, e.g. "Иван Иванов, собственник">
+prepared_at: <ISO date>
+sections:
+  business_understanding:                        # «как мы поняли ваш бизнес»
+    summary: <free-form, ≤ 1500 chars>
+    revenue_structure_observed: <≤ 800 chars>
+    operating_model_observed: <≤ 800 chars>
+    based_on_documents: [...]                    # ссылки на присланные документы
+  strengths:                                     # что увидели как силу бизнеса
+    - point: <string>
+      evidence: <string>
+  areas_of_concern:                              # что увидели как слабости/риски (мягкие формулировки)
+    - point: <string>
+      evidence: <string>
+      reframe_as_question: <string>              # переведено в вопрос, не в обвинение
+  preliminary_valuation_range:
+    basis: ebitda_multiple | net_profit_multiple | payback | revenue_multiple | not_disclosed
+    range_low_rub: <int | null>
+    range_high_rub: <int | null>
+    range_disclosed_to_seller: yes | no | with_caveats
+    caveats: <≤ 600 chars>                       # «оценка предварительная, зависит от уточнений»
+  next_steps_for_seller:                         # что нужно для уточнения оценки
+    - title: <string>
+      from_catalog_id: <ID из SELLER_FOLLOWUP_CATALOG.md | null>
+      why_we_need_it: <≤ 300 chars, человеческая формулировка>
+  closing_note: <free-form, ≤ 500 chars>
+tone: professional | warm_professional | exploratory
+output_format: pdf | md_only | both
+disclosed_uncertainties: <bool>                  # сообщаем ли продавцу о слабых местах данных
+internal_only_appendix:                          # секция, которая в PDF не попадает
+  things_we_noticed_but_did_not_disclose: []     # держим у себя как переговорные карты
+```
+
+> **Принципиальные ограничения этого артефакта:**
+> - Не сообщаем продавцу всё, что заметили — `internal_only_appendix` остаётся у нас как переговорные карты.
+> - `preliminary_valuation_range` может быть `range_disclosed_to_seller: no` — на ранней стадии часто лучше не называть цифры.
+> - `areas_of_concern[].reframe_as_question` обязателен: «выручка от связанных лиц» становится «как вы видите долгосрочную устойчивость выручки от группы компаний, аффилированных с вашим ИП?».
+> - Формат PDF — стандартизированный шаблон pandoc, не «дизайнерская презентация». Сила в содержании, не в графике.
 
 ### 11. `escalation_recommendation`
 
@@ -267,15 +385,17 @@ revenue_profile: <object §3>
 operating_economics: <object §4>
 tax_normalization: <object §5>
 client_base_assessment: <object §6>
+assets_inventory: <object §6a>
 owner_dependency: <object §7>
 founder_exit_scenario: <object §8>
 valuation_basis: <object §9>
 seller_feedback_draft: <object §10>
+seller_deliverable_pack: <object §10a>          # outbound PDF, не часть internal report
 escalation_recommendation: <object §11>
 open_questions: <list of §12>
 ```
 
-Это **единственный** объект, который покидает пайплайн. Всё остальное — внутренние компоненты.
+Это **единственный** объект, который покидает пайплайн. `seller_deliverable_pack` рендерится из него в PDF и уходит наружу — но сам root остаётся внутренним.
 
 ## Pipeline flow
 
@@ -295,7 +415,8 @@ normalization layer (parallel)
         │
         ▼
 asset-quality layer (parallel)
-  ├─ client_base_assessment
+  ├─ client_base_assessment          ← + customers[] с per-client LTV
+  ├─ assets_inventory                ← hardware/licenses/IP/brand/key_people + transfer_status
   └─ owner_dependency
         │
         ▼
@@ -309,11 +430,16 @@ valuation prep
         ▼
 output layer
   ├─ open_questions (агрегатор)
-  ├─ seller_feedback_draft           ← опирается на open_questions + preliminary findings
+  ├─ seller_feedback_draft           ← lookup в SELLER_FOLLOWUP_CATALOG.md
   └─ escalation_recommendation       ← опирается на reliability + whitening_gap + dependency
         │
         ▼
-TargetFinancialAssessment (root)
+internal report (root)
+  └─ TargetFinancialAssessment
+        │
+        ▼
+outbound (опционально)
+  └─ seller_deliverable_pack         ← rendered MD→PDF, отправляется продавцу
 ```
 
 Gate в reliability layer — критический: если `can_proceed_to_normalization: no`, дальнейшие слои **не запускаются**, пайплайн сразу идёт в `seller_feedback_draft` с запросом базовых артефактов и в `escalation_recommendation` с пометкой «недостаточно данных».
